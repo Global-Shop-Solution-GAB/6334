@@ -1,0 +1,320 @@
+﻿Program.Sub.Preflight.Start
+v.Global.bDatExists.Declare(BBoolean,false)
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+' Quote no 12781 - on new order or line creation we are updating the Freight and The line options screen with the appropriate Freight account and also on the save and exit hooks, updating the DB with the accounts just to be sure.
+'F.Intrinsic.Control.Try
+	V.Local.sError.declare
+	
+	Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+	
+	f.Intrinsic.Control.CallSub(CheckDatFile)
+	
+	f.ODBC.Connection!Conx.OpenCompanyConnection
+	
+	f.Intrinsic.Control.SelectCase(v.Caller.Hook)
+'		'on the header Userfied save hook, we are storing the save channel(UF1) to the global passed variable. This is so we can update the freight screen if the header hasn't been saved to the database yet. Otherwise we would access the UF1 direclty from the database.
+'		f.Intrinsic.Control.Case(32830)
+'			v.Passed.global.Set(v.passed.000007.Trim)
+			
+		'on the Freight Button Hook, Check and see if  the DB has the UF information for the order. if not, show a msg box saying they need to save the order and prevent them from entering the screen. Set the global passed variable if UF1 is available in the DB.
+		F.Intrinsic.Control.Case(11830)
+			
+			f.Intrinsic.Control.CallSub(FrScrCheck)
+		
+		'Freight screen populate hook. Update the GL account field based on the Freigh account associated with the channel. The channel should be available in the Global passed variable.
+		F.Intrinsic.Control.Case(36310)
+			
+			f.Intrinsic.Control.CallSub(FrLnGlUpdate)
+			
+		'on the Line Button Hook, Check and see if  the DB has the UF information for the order.  Set the global passed variable if UF1 is available in the DB.
+		F.Intrinsic.Control.Case(11810)
+			
+			f.Intrinsic.Control.CallSub(LnScrCheck)
+			
+		'on the line options hook,	Update the GL account field based on the Freigh account associated with the channel. The channel should be available in the Global passed variable.
+		F.Intrinsic.Control.Case(12650)
+			f.Intrinsic.Control.CallSub(FrLnGlUpdate)
+		
+'		'on the line exit hook, save the value directly to the table for all lines. The reason we do this is incase they do not go to the freight screen and the Options screen, we overwrite the default.
+'		f.Intrinsic.control.Case(12600)
+'			f.Intrinsic.Control.CallSub(UpdateGlLines)
+			
+		'on line save in case they save lines but do not exit 
+		f.Intrinsic.control.Case(12511)
+			f.Intrinsic.Control.CallSub(UpdateGlLines)
+		
+		'on header save hook save. 
+		f.Intrinsic.control.Case(11872)
+			f.Intrinsic.Control.CallSub(UpdateGlLines)
+			
+	f.Intrinsic.Control.EndSelect
+	
+	
+	
+	
+	
+	
+	f.Intrinsic.control.callsub("Unload")
+
+
+
+
+'	
+'F.Intrinsic.Control.Catch
+'	F.Intrinsic.Control.CallSub(ErrorMessage, "ErrorNumber", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription, "Subroutine", V.Ambient.CurrentSubroutine, "Callback", "FormSettings_UnLoad")
+'F.Intrinsic.Control.EndTry
+
+Program.Sub.Main.End
+
+Program.Sub.CheckDatFile.Start
+
+'F.Intrinsic.Control.Try
+	' we are checking for the file to get the association for the Freight and Revenue GL account and the corrspoinding sales channel.
+	v.Local.sFile.Declare
+	v.Local.bExists.Declare
+	V.Local.sError.declare
+	v.Local.sFileContents.declare
+	
+	F.Intrinsic.String.Build("{0}\Custom\5807\{1}\GCG_5807_DPI_GL_CODES.dat", V.Caller.GlobalDir, V.Caller.CompanyCode, V.Local.sFile)
+	F.Intrinsic.File.Exists(V.Local.sFile, V.Local.bExists)
+	F.Intrinsic.Control.If(V.Local.bExists)
+		F.Intrinsic.File.File2String(V.Local.sFile, V.Local.sFileContents)
+		F.Data.DataTable.CreateFromString("dtDPIGLAssociation", V.Local.sFileContents, "TYPE*!*CODE*!*ACCOUNT", "String*!*String*!*String", ":", V.Ambient.NewLine,true)
+'		v.Global.bDatExists.Set(True)
+		'	F.Intrinsic.Control.Else
+		'		v.Global.bDatExists.Set(False)
+		'		'	F.Intrinsic.UI.Msgbox("The GL association file [Global\Custom\5807\ccc\GCG_5807_DPI_GL_CODES.dat] was not found. GL accounts will not be updated for the appropriate Sales Channel.")
+		'		f.Intrinsic.control.callsub("Unload")
+	F.Intrinsic.Control.EndIf
+	
+'F.Intrinsic.Control.Catch
+'	F.Intrinsic.Control.CallSub(ErrorMessage, "ErrorNumber", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription, "Subroutine", V.Ambient.CurrentSubroutine, "Callback", "FormSettings_UnLoad")
+'F.Intrinsic.Control.EndTry
+Program.Sub.CheckDatFile.End
+
+Program.Sub.Unload.Start
+
+F.Intrinsic.Control.Try
+
+	V.Local.sError.Declare
+	v.Local.sDescription.Declare
+	v.Local.sSQL.Declare
+	
+	f.Intrinsic.Control.If(v.ODBC.conx.State,=,1)
+		F.ODBC.Connection!conX.close
+	f.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.Control.End
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.Control.CallSub(ErrorMessage, "ErrorNumber", V.Ambient.ErrorNumber, "ErrorDescription", V.Ambient.ErrorDescription, "Subroutine", V.Ambient.CurrentSubroutine, "Callback", "FormSettings_UnLoad")
+F.Intrinsic.Control.EndTry
+
+
+Program.Sub.Unload.End
+
+Program.Sub.ErrorMessage.Start
+
+F.Intrinsic.Control.Try
+
+	V.Local.sError.Declare(String)
+	V.Local.bExists.Declare(Boolean)
+	V.Local.sCallback.Declare(String)
+	V.Local.sDoubleNewLine.Declare(String)
+	V.Local.sPrefix.Declare(String, "")
+	
+	
+	
+	F.Intrinsic.String.Build("{6}{1}{1}Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}", V.Caller.ScriptFile, V.Ambient.Newline, V.Args.Subroutine, V.Args.ErrorNumber, V.Args.ErrorDescription, V.Ambient.GABVersion, V.Ambient.Now, V.Local.sError)
+	
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	
+	
+	f.Intrinsic.Control.If(v.ODBC.conx.State,=,1)
+		F.ODBC.Connection!conX.close
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("{0}Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.ErrorMessage.End
+
+Program.Sub.FrScrCheck.Start
+'check if the database has the channel. if neither. they will have to save to open this screen.
+F.Intrinsic.Control.Try
+	v.Local.sSql.Declare
+	v.Local.sUF1.Declare
+	V.Local.sError.Declare(String)
+	v.Local.sOrder.Declare
+	
+	f.Intrinsic.String.LPad(v.Passed.000003.Trim,0,7,v.Local.sOrder)
+	
+	
+	F.Intrinsic.String.Build("Select USER_1 from V_ORDER_HEADER where order_no = '{0}' and Record_no like '%A%' ;",v.Local.sOrder,v.Local.sSql)
+	
+	f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql,v.Local.sUF1)
+	
+	f.Intrinsic.Control.If(v.Local.sUF1.Trim,=,"")
+		f.Intrinsic.UI.Msgbox("You will need to save the order in order to open this screen.")
+		v.Passed.777777.Set(1)
+	f.Intrinsic.Control.Else
+		v.passed.global.Set(v.Local.sUF1.Trim)
+	f.Intrinsic.Control.EndIf
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("{0}Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.FrScrCheck.End
+
+Program.Sub.FrLnGlUpdate.Start
+'same sub being called for Fr and Ln because the hook number for GL account update is the same
+F.Intrinsic.Control.Try
+	V.Local.sError.declare
+	V.Local.sFilter.Declare
+	v.Local.sAccount.Declare
+	
+		
+	f.Intrinsic.Control.If(v.Caller.Hook,=,36310)
+		'If Freight
+		F.intrinsic.String.Build("TYPE = 'F' and CODE = '{0}'",v.Passed.global.Trim,v.Local.sFilter)
+	f.Intrinsic.Control.ElseIf(v.Caller.Hook,=,12650)
+		'if line options
+		F.intrinsic.String.Build("TYPE = 'R' and CODE = '{0}'",v.Passed.global.Trim,v.Local.sFilter)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+
+	F.Data.DataView.Create("dtDPIGLAssociation", "dvDPIGLAssociation", 22, v.Local.sFilter, "")
+	
+	f.Intrinsic.Control.If(v.Dataview.dtDPIGLAssociation!dvDPIGLAssociation.RowCount,>,0)
+	
+		v.Local.sAccount.set(v.DataView.dtDPIGLAssociation!dvDPIGLAssociation(0).ACCOUNT!FieldValTrim)
+		f.Intrinsic.Control.If(v.Local.sAccount.trim,<>,"")
+			f.Intrinsic.Control.If(v.Caller.Hook,=,36310)
+				v.Passed.000003.Set(v.Local.sAccount.Trim)
+			f.Intrinsic.Control.ElseIf(v.Caller.Hook,=,12650)
+				v.Passed.000033.Set(v.Local.sAccount.Trim)
+			f.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("{0}Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+
+Program.Sub.FrLnGlUpdate.End
+
+Program.Sub.LnScrCheck.Start
+'check if the database has the channel. if neither. they will have to save to open this screen.
+F.Intrinsic.Control.Try
+	v.Local.sSql.Declare
+	v.Local.sUF1.Declare
+	V.Local.sError.Declare(String)
+	v.Local.sOrder.Declare
+	
+	f.Intrinsic.String.LPad(v.Passed.000003.Trim,0,7,v.Local.sOrder)
+	
+	
+	F.Intrinsic.String.Build("Select USER_1 from V_ORDER_HEADER where order_no = '{0}' and Record_no like '%A%' ;",v.Local.sOrder,v.Local.sSql)
+	
+	f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql,v.Local.sUF1)
+	
+	f.Intrinsic.Control.If(v.Local.sUF1.Trim,<>,"")
+		v.passed.global.Set(v.Local.sUF1.Trim)
+	f.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("{0}Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.LnScrCheck.End
+
+Program.Sub.UpdateGlLines.Start
+
+'update accounts on the line exit or the header save hook.
+F.Intrinsic.Control.Try
+	v.Local.sSql.Declare
+	v.Local.sUF1.Declare	
+	v.Local.sOrder.Declare
+	v.Local.sFrAccount.Declare
+	v.Local.sRevAccount.Declare
+	v.Local.sFilter.Declare
+	V.Local.sError.Declare(String)
+	
+	f.Intrinsic.Control.If(v.Caller.Hook,=,11872)
+		'ord number on the save hook
+		f.Intrinsic.String.LPad(v.Passed.000003.Trim,0,7,v.Local.sOrder)
+	f.Intrinsic.Control.ElseIf(v.Caller.Hook,=,12600,"OR",v.Caller.Hook,=,12511)
+		'ord number on the line exit hook
+		f.Intrinsic.String.LPad(v.Passed.000005.Trim,0,7,v.Local.sOrder)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.String.Build("Select USER_1 from V_ORDER_HEADER where order_no = '{0}' and Record_no like '%A%' ;",v.Local.sOrder,v.Local.sSql)
+	
+	f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSql,v.Local.sUF1)
+	
+	
+	'get the freight account for the sales channel
+	F.intrinsic.String.Build("TYPE = 'F' and CODE = '{0}'",v.Local.sUF1.Trim,v.Local.sFilter)
+	
+	F.Data.DataView.Create("dtDPIGLAssociation", "dvDPIGLAssociation", 22, v.Local.sFilter, "")
+	
+	f.Intrinsic.Control.If(v.Dataview.dtDPIGLAssociation!dvDPIGLAssociation.RowCount,>,0)
+		v.Local.sFrAccount.set(v.DataView.dtDPIGLAssociation!dvDPIGLAssociation(0).ACCOUNT!FieldValTrim)
+	f.Intrinsic.Control.EndIf
+	
+	
+
+	'get the Revenue account for the sales channel
+	F.intrinsic.String.Build("TYPE = 'R' and CODE = '{0}'",v.Local.sUF1.Trim,v.Local.sFilter)
+	
+	
+	F.Data.DataView.SetFilter("dtDPIGLAssociation", "dvDPIGLAssociation",v.Local.sFilter)
+	
+	f.Intrinsic.Control.If(v.Dataview.dtDPIGLAssociation!dvDPIGLAssociation.RowCount,>,0)
+		v.Local.sRevAccount.set(v.DataView.dtDPIGLAssociation!dvDPIGLAssociation(0).ACCOUNT!FieldValTrim)
+	f.Intrinsic.Control.EndIf
+	
+	'update Freight lines with freight account
+	f.Intrinsic.control.If(v.Local.sFrAccount.Trim,<>,"")
+		F.Intrinsic.String.Build("update ORDER_LINES set GL_ACCOUNT = '{1}' where ORDER_NO = '{0}' and RECORD_TYPE Like '%L%' and LINE_TYPE like '%F%'", V.Local.sOrder, v.Local.sFrAccount, V.Local.sSQL)
+		f.ODBC.Connection!conx.Execute(v.Local.sSql)
+	f.Intrinsic.Control.EndIf
+	
+	'update other lines whic is not tax with the actual account
+	f.Intrinsic.control.If(v.Local.sRevAccount.Trim,<>,"")
+		F.Intrinsic.String.Build("update ORDER_LINES set GL_ACCOUNT = '{1}' where ORDER_NO = '{0}' and RECORD_TYPE Like '%L%' and LINE_TYPE not like '%F%' and part not like '%TAX%'", V.Local.sOrder, v.Local.sRevAccount, V.Local.sSQL)
+		
+		f.ODBC.Connection!conx.Execute(v.Local.sSql)
+	f.Intrinsic.Control.EndIf
+	
+	
+	
+	
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("{0}Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Caller.ScriptFile,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+
+Program.Sub.UpdateGlLines.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$adsouza$}$20210423162825590$}$JX3L09Cgehg7O+lKYSb2ur8FFsJUp9u/jU/ybBn9LJvSxIgKf7vX8A3U3JDQ/CychL78NwZdcR4=
+Program.Sub.Comments.End
